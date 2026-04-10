@@ -127,6 +127,13 @@ namespace Confluent.Kafka
 
 
         /// <summary>
+        ///     Raised right before consumer assignment is changed either as side-effect of Consume(..) call
+        ///     (when subscribed) or when Assign/IncrementalAssign/Unassign/IncrementalUnassign is called directly.
+        /// </summary>
+        event EventHandler<AssignmentChangingEventArgs> AssignmentChanging;
+
+
+        /// <summary>
         ///     Gets the current topic subscription as set by
         ///     <see cref="Confluent.Kafka.Consumer{TKey,TValue}.Subscribe(string)" />.
         /// </summary>

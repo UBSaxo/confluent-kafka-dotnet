@@ -118,7 +118,7 @@ namespace Confluent.Kafka
             {
                 handlerException = e;
             }
-            
+
             return 0; // instruct librdkafka to immediately free the json ptr.
         }
 
@@ -172,7 +172,7 @@ namespace Confluent.Kafka
             {
                 // Ensure registered handlers are never called as a side-effect of Dispose/Finalize (prevents deadlocks in common scenarios).
                 if (kafkaHandle.IsClosed)
-                { 
+                {
                     // The RebalanceCallback should never be invoked as a side effect of Dispose.
                     // If for some reason flow of execution gets here, something is badly wrong. 
                     // (and we have a closed librdkafka handle that is expecting an assign call...)
@@ -228,7 +228,7 @@ namespace Confluent.Kafka
                             partitionsIter.MoveNext();
                             if (p.TopicPartition != partitionsIter.Current)
                             {
-                                throw new InvalidOperationException("The partitions assigned handler must not return a different set of topic partitions than it was provided");
+                            throw new InvalidOperationException("The partitions assigned handler must not return a different set of topic partitions than it was provided");
                             }
                         }
 
@@ -376,6 +376,10 @@ namespace Confluent.Kafka
 
 
         /// <inheritdoc/>
+        public event EventHandler<AssignmentChangingEventArgs> AssignmentChanging;
+
+
+        /// <inheritdoc/>
         public List<string> Subscription
             => kafkaHandle.GetSubscription();
 
@@ -411,23 +415,27 @@ namespace Confluent.Kafka
         public void Assign(IEnumerable<TopicPartitionOffset> partitions)
         {
             lock (assignCallCountLockObj) { assignCallCount += 1; }
-            kafkaHandle.Assign(partitions.ToList());
+
+            List<TopicPartitionOffset> partitionsList = partitions.ToList();
+            AssignmentChanging?.Invoke(this, new AssignmentChangingEventArgs(partitionsList, []));
+
+            kafkaHandle.Assign(partitionsList);
         }
 
 
         /// <inheritdoc/>
-        public void Assign(IEnumerable<TopicPartition> partitions)
-        {
-            lock (assignCallCountLockObj) { assignCallCount += 1; }
-            kafkaHandle.Assign(partitions.Select(p => new TopicPartitionOffset(p, Offset.Unset)).ToList());
-        }
+        public void Assign(IEnumerable<TopicPartition> partitions) => Assign(partitions.Select(p => new TopicPartitionOffset(p, Offset.Unset)));
 
 
         /// <inheritdoc/>
         public void IncrementalAssign(IEnumerable<TopicPartitionOffset> partitions)
         {
             lock (assignCallCountLockObj) { assignCallCount += 1; }
-            kafkaHandle.IncrementalAssign(partitions.ToList());
+
+            List<TopicPartitionOffset> partitionsList = partitions.ToList();
+            AssignmentChanging?.Invoke(this, new AssignmentChangingEventArgs(partitionsList, []));
+
+            kafkaHandle.IncrementalAssign(partitionsList);
         }
 
 
@@ -440,6 +448,9 @@ namespace Confluent.Kafka
         public void IncrementalUnassign(IEnumerable<TopicPartition> partitions)
         {
             lock (assignCallCountLockObj) { assignCallCount += 1; }
+
+            AssignmentChanging?.Invoke(this, new AssignmentChangingEventArgs([], partitions.ToList()));
+
             kafkaHandle.IncrementalUnassign(partitions.Select(p => new TopicPartitionOffset(p, Offset.Unset)).ToList());
         }
 
@@ -448,6 +459,7 @@ namespace Confluent.Kafka
         public void Unassign()
         {
             lock (assignCallCountLockObj) { assignCallCount += 1; }
+            AssignmentChanging?.Invoke(this, new AssignmentChangingEventArgs([], Assignment));
             kafkaHandle.Assign(null);
         }
 
@@ -624,7 +636,7 @@ namespace Confluent.Kafka
         {
             // Calling Dispose a second or subsequent time should be a no-op.
             lock (disposeHasBeenCalledLockObj)
-            { 
+            {
                 if (disposeHasBeenCalled) { return; }
                 disposeHasBeenCalled = true;
             }
@@ -697,10 +709,10 @@ namespace Confluent.Kafka
             var configHandle = SafeConfigHandle.Create();
 
             modifiedConfig.ForEach((kvp) =>
-                {
-                    if (kvp.Value == null) { throw new ArgumentNullException($"'{kvp.Key}' configuration parameter must not be null."); }
-                    configHandle.Set(kvp.Key, kvp.Value);
-                });
+            {
+                if (kvp.Value == null) { throw new ArgumentNullException($"'{kvp.Key}' configuration parameter must not be null."); }
+                configHandle.Set(kvp.Key, kvp.Value);
+            });
 
             // Explicitly keep references to delegates so they are not reclaimed by the GC.
             rebalanceDelegate = RebalanceCallback;
@@ -955,7 +967,7 @@ namespace Confluent.Kafka
                         ex);
                 }
 
-                return new ConsumeResult<TKey, TValue> 
+                return new ConsumeResult<TKey, TValue>
                 {
                     TopicPartitionOffset = new TopicPartitionOffset(topic,
                         msg.partition, msg.offset,
